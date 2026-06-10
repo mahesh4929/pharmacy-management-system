@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Pill, Plus, Search, ShoppingCart, AlertTriangle } from "lucide-react";
+import { Pill, Plus, Search, ShoppingCart, AlertTriangle, Bell } from "lucide-react";
 import toast from "react-hot-toast";
 import Link from "next/link";
 import { api, extractErrorMessage } from "@/lib/api";
+import { getSession } from "@/lib/auth";
 import { ProtectedLayout } from "@/components/layout/ProtectedLayout";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/Button";
@@ -79,6 +80,27 @@ export default function ShopPage() {
       maxCount: stock.count,
     });
     toast.success(`${stock.name} added to cart`);
+  };
+
+  // Q2 — track which out-of-stock medicines this customer has already
+  // asked to be notified about, so the button can switch to a confirmed state.
+  const [notifiedIds, setNotifiedIds] = useState<number[]>([]);
+
+  // Q2 — customer clicks "Notify me" on an out-of-stock medicine.
+  // Calls the backend, which records a PENDING subscription for THIS customer.
+  const handleNotifyMe = async (stock: Stock) => {
+    const customerId = getSession()?.userId;
+    if (!customerId) {
+      toast.error("Please log in to get notified");
+      return;
+    }
+    try {
+      await api.post(`/stock/${stock.id}/notify-me`, { customerId });
+      setNotifiedIds((prev) => [...prev, stock.id]);
+      toast.success(`We'll notify you when ${stock.name} is back in stock`);
+    } catch (e: any) {
+      toast.error(extractErrorMessage(e));
+    }
   };
 
   return (
@@ -180,24 +202,35 @@ export default function ShopPage() {
                     </p>
                   </div>
                   {/* Single primary Add button (Order Now removed per teacher feedback).
-                      Disabled and labelled differently when expired so the user understands why. */}
-                  <Button
-                    onClick={() => handleAdd(stock)}
-                    disabled={expired || stock.count <= 0}
-                    className="w-full"
-                  >
-                    {expired ? (
-                      <>
-                        <AlertTriangle className="w-4 h-4 mr-2" />
-                        Cannot Order (Expired)
-                      </>
+                      Q2: when out of stock (and not expired), show a "Notify me"
+                      button instead of a dead disabled button. */}
+                  {expired ? (
+                    <Button disabled className="w-full">
+                      <AlertTriangle className="w-4 h-4 mr-2" />
+                      Cannot Order (Expired)
+                    </Button>
+                  ) : stock.count <= 0 ? (
+                    notifiedIds.includes(stock.id) ? (
+                      <Button variant="secondary" disabled className="w-full">
+                        <Bell className="w-4 h-4 mr-2" />
+                        We'll notify you
+                      </Button>
                     ) : (
-                      <>
-                        <Plus className="w-4 h-4 mr-2" />
-                        Add to Cart
-                      </>
-                    )}
-                  </Button>
+                      <Button
+                        variant="secondary"
+                        onClick={() => handleNotifyMe(stock)}
+                        className="w-full"
+                      >
+                        <Bell className="w-4 h-4 mr-2" />
+                        Notify me when available
+                      </Button>
+                    )
+                  ) : (
+                    <Button onClick={() => handleAdd(stock)} className="w-full">
+                      <Plus className="w-4 h-4 mr-2" />
+                      Add to Cart
+                    </Button>
+                  )}
                 </div>
               </div>
             );

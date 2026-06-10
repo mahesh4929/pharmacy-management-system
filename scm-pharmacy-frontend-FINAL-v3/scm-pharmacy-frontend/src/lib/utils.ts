@@ -90,3 +90,42 @@ export function expiryStatus(expiryDate: string | undefined | null): {
     return { label: "Invalid date", className: "bg-ink-100 text-ink-500" };
   }
 }
+
+/**
+ * Returns ONLY the coarse expiry-status flag for the dedicated status column.
+ * Distinct from expiryStatus() above, which produces the day-count badge
+ * shown next to the date. This one answers a single question for the admin:
+ * "what category is this medicine in?" — matching the backend's
+ * EXPIRED / CRITICAL (<=15d) / EXPIRING_SOON (<=30d) / OK statuses.
+ *
+ * `withinThreshold` is true when the medicine needs admin attention
+ * (expired OR expiring within 30 days), used to build the filtered list.
+ */
+export function expiryFlag(expiryDate: string | undefined | null): {
+  label: string;
+  className: string;
+  withinThreshold: boolean;
+} {
+  if (!expiryDate) {
+    return { label: "—", className: "bg-ink-100 text-ink-500", withinThreshold: false };
+  }
+  try {
+    const expiry = new Date(expiryDate + "T00:00:00");
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const days = Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+    if (days < 0) {
+      return { label: "Expired", className: "bg-red-100 text-red-700", withinThreshold: true };
+    }
+    if (days <= 15) {
+      return { label: "Critical", className: "bg-red-100 text-red-700", withinThreshold: true };
+    }
+    if (days <= 30) {
+      return { label: "Expiring Soon", className: "bg-amber-100 text-amber-700", withinThreshold: true };
+    }
+    return { label: "OK", className: "bg-green-100 text-green-700", withinThreshold: false };
+  } catch {
+    return { label: "—", className: "bg-ink-100 text-ink-500", withinThreshold: false };
+  }
+}

@@ -12,7 +12,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import { Empty } from "@/components/ui/Empty";
 import { Modal } from "@/components/ui/Modal";
 import { Stock } from "@/lib/types";
-import { formatPrice, formatDate, formatExpiry, expiryStatus } from "@/lib/utils";
+import { formatPrice, formatDate, formatExpiry, expiryStatus, expiryFlag } from "@/lib/utils";
 import { parseBulkStockFile, downloadSampleCSV, BulkStockRow } from "@/lib/bulkImport";
 
 interface StockFormData {
@@ -31,6 +31,10 @@ export default function AdminStockPage() {
   const [editing, setEditing] = useState<Stock | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState<StockFormData>({ name: "", description: "", count: "", price: "", expiryDate: "" });
+
+  // Q1: when true, the table shows ONLY medicines expiring within 30 days
+  // (or already expired) — the "list of expiring medicines" the admin needs.
+  const [expiringOnly, setExpiringOnly] = useState(false);
 
   // Bulk import state ---
   // bulkOpen: is the bulk import modal showing
@@ -182,7 +186,18 @@ export default function AdminStockPage() {
     }
   };
 
-  const filtered = stocks.filter((s) => s.name?.toLowerCase().includes(search.toLowerCase()));
+  // Base search filter (by name)
+  const searched = stocks.filter((s) => s.name?.toLowerCase().includes(search.toLowerCase()));
+
+  // How many medicines (across the whole catalog) need attention:
+  // expired or expiring within 30 days. Drives the summary banner.
+  const expiringCount = stocks.filter((s) => expiryFlag(s.expiryDate).withinThreshold).length;
+
+  // Final list shown in the table. When the toggle is on, restrict to
+  // medicines expiring within 30 days (or already expired).
+  const filtered = expiringOnly
+    ? searched.filter((s) => expiryFlag(s.expiryDate).withinThreshold)
+    : searched;
 
   return (
     <ProtectedLayout allowedRoles={["admin"]}>
@@ -223,6 +238,26 @@ export default function AdminStockPage() {
         />
       </div>
 
+      {/* Q1: expiry summary banner. Shows how many medicines are expiring
+          within 30 days and lets the admin filter the table down to just
+          those — i.e. the "list of expiring medicines". */}
+      {expiringCount > 0 && (
+        <div className="mb-6 flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+          <div className="flex items-center gap-2 text-sm text-amber-800">
+            <span className="font-semibold">{expiringCount}</span>
+            <span>
+              {expiringCount === 1 ? "medicine is" : "medicines are"} expiring within 30 days or already expired
+            </span>
+          </div>
+          <button
+            onClick={() => setExpiringOnly((v) => !v)}
+            className="text-sm font-medium text-amber-800 underline hover:text-amber-900"
+          >
+            {expiringOnly ? "Show all medicines" : "Show only these"}
+          </button>
+        </div>
+      )}
+
       {loading ? (
         <Spinner />
       ) : filtered.length === 0 ? (
@@ -243,6 +278,7 @@ export default function AdminStockPage() {
                 <th className="text-right py-3 px-4 font-medium">Stock</th>
                 <th className="text-right py-3 px-4 font-medium">Price</th>
                 <th className="text-left py-3 px-4 font-medium">Expiry Date</th>
+                <th className="text-left py-3 px-4 font-medium">Expiry Status</th>
                 <th className="text-left py-3 px-4 font-medium">Last Updated</th>
                 <th className="text-right py-3 px-4 font-medium">Actions</th>
               </tr>
@@ -250,6 +286,7 @@ export default function AdminStockPage() {
             <tbody>
               {filtered.map((stock) => {
                 const exp = expiryStatus(stock.expiryDate);
+                const flag = expiryFlag(stock.expiryDate);
                 return (
                 <tr key={stock.id} className="border-b border-ink-100 hover:bg-ink-50">
                   <td className="py-3 px-4 text-sm text-ink-500">#{stock.id}</td>
@@ -266,6 +303,9 @@ export default function AdminStockPage() {
                       <span className="text-ink-700">{formatExpiry(stock.expiryDate)}</span>
                       <span className={`badge ${exp.className} self-start`}>{exp.label}</span>
                     </div>
+                  </td>
+                  <td className="py-3 px-4 text-sm">
+                    <span className={`badge ${flag.className} self-start`}>{flag.label}</span>
                   </td>
                   <td className="py-3 px-4 text-xs text-ink-500">{formatDate(stock.updatedAt)}</td>
                   <td className="py-3 px-4 text-right">
